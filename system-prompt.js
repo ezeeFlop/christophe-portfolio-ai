@@ -96,7 +96,6 @@ Accor, Dior, E.Leclerc, Hermès, La Poste, Marionnaud, Louis Vuitton, RedHat, SF
 - LinkedIn: linkedin.com/in/cverdier
 - Website: sponge-theory.ai
 - Location: Vernon, France
-- Phone: +33 6 78 91 46 82
 
 ## RESPONSE GUIDELINES
 1. Be specific and detailed - use actual project names, technologies, and metrics
@@ -193,7 +192,6 @@ Accor, Dior, E.Leclerc, Hermès, La Poste, Marionnaud, Louis Vuitton, RedHat, SF
 - LinkedIn: linkedin.com/in/cverdier
 - Site web: sponge-theory.ai
 - Localisation: Vernon, France
-- Téléphone: +33 6 78 91 46 82
 
 ## DIRECTIVES DE RÉPONSE
 1. Être spécifique et détaillé - utiliser les noms de projets, technologies et métriques réels

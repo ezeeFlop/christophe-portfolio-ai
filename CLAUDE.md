@@ -8,6 +8,12 @@ This is an AI-powered portfolio website that allows potential employers/clients 
 
 **The Next Generation of Resumes**: This portfolio represents a paradigm shift from static resumes to interactive, conversational professional presentation. Instead of keyword matching and 6-second scans, it enables deep exploration through AI-powered conversations.
 
+**Live Demo**: [portfolio.sponge-theory.dev](https://portfolio.sponge-theory.dev) - See it in action!
+
+**Inspiration**: Concept pioneered by [Nate B. Jones](https://natebjones.com)
+
+**GitHub Repository**: [github.com/ezeeFlop/christophe-portfolio-ai](https://github.com/ezeeFlop/christophe-portfolio-ai/)
+
 **For the full concept and philosophy**, see `BLOG.md` which explains why this approach works, the psychology behind it, and how it changes the hiring dynamic.
 
 ## Development Commands
@@ -148,25 +154,66 @@ The chat modal can be closed via:
 - Pressing the Escape key
 The modal stops event propagation on the content area to prevent accidental closure when clicking inside.
 
+### Suggested Questions (AI/RAG Focus)
+When the chat is empty, users see 5 suggested questions focused on AI and RAG expertise:
+- **English**: "Tell me about NeoRAG and how it works", "What's your experience with RAG systems?", etc.
+- **French**: "Explique-moi NeoRAG et comment il fonctionne", "Quelle est ton expérience avec les systèmes RAG ?", etc.
+- Questions are clickable and immediately send the message to the AI
+- Helps users understand what they can ask about
+- Focuses conversation on core expertise areas
+
+### Page View Counter
+The application tracks page views with a simple in-memory counter:
+- Backend endpoint: `/api/stats` returns `{ pageViews: number }`
+- Counter increments on each homepage visit (server.js line ~260)
+- Displayed in the demo banner at the top of the page
+- Formatted with locale-specific number formatting (e.g., "1,234 views")
+- Counter resets when server restarts (use Redis/database for persistence in production)
+
 ### Security and Jailbreak Protection
-The application implements multiple layers of security to prevent unauthorized usage and jailbreak attempts:
+
+The application implements comprehensive multi-layer security based on **OWASP GenAI 2025/2026** best practices to prevent unauthorized usage and jailbreak attempts.
+
+**Enhanced Protection (Updated 2026)**:
+Based on [OWASP LLM01:2025 Prompt Injection](https://genai.owasp.org/llmrisk/llm01-prompt-injection/) and [OWASP Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/LLM_Prompt_Injection_Prevention_Cheat_Sheet.html)
 
 **Backend Protection (server.js)**:
 - **Input Validation**: Maximum 2000 characters, sanitization of special characters
-- **Jailbreak Pattern Detection**: Regex patterns detect common jailbreak attempts like "ignore previous instructions", "new role", "pretend to be", "DAN mode", etc.
+- **Enhanced Jailbreak Pattern Detection** (35+ patterns):
+  - Instruction override attempts ("ignore previous instructions", "disregard training")
+  - Identity manipulation ("you are no longer", "new role", "pretend to be")
+  - System prompt leakage (OWASP LLM07:2025) ("show your system prompt", "reveal instructions")
+  - Mode switching ("DAN mode", "developer mode", "simulation mode")
+  - Context poisoning ("from now on", "reset conversation")
+  - Special tokens ({{...}}, [INST], <|im_start|>, etc.)
+  - Unicode/encoding attacks (zero-width characters, excessive non-ASCII)
+- **Anomaly Detection** (OWASP 2026):
+  - Repetitive pattern detection (same pattern repeated 5+ times)
+  - Excessive punctuation monitoring
+  - Base64/Hex encoding detection
+  - Excessive newline detection (>10 line breaks)
 - **Rate Limiting**: Maximum 20 requests per minute per session to prevent abuse
 - **Sanitized History**: Only validated and sanitized messages are stored in conversation history
+- **Security Logging**: All jailbreak attempts are logged with console warnings
 
 **Frontend Protection (index.html)**:
 - **Client-side Validation**: Immediate feedback before API calls
-- **Pattern Detection**: Checks for suspicious patterns and provides user-friendly error messages
+- **Pattern Detection**: Matches backend patterns for instant user feedback
 - **Character Limit**: Enforced before sending to backend
+- **Special Character Ratio Check**: Detects unusual formatting
+- **Newline Limit**: Prevents context poisoning via excessive line breaks
 
 **System Prompt Hardening (system-prompt.js)**:
 - **Explicit Boundaries**: Clear instructions that cannot be overridden
 - **Role Enforcement**: System prompt explicitly states it will not accept new instructions or role changes
 - **Redirect Instructions**: Provides specific response when users attempt jailbreaks
 - **Bilingual Protection**: Both EN and FR prompts include security boundaries
+
+**Security References**:
+- OWASP LLM01:2025 Prompt Injection
+- OWASP LLM07:2025 System Prompt Leakage
+- OWASP LLM Prompt Injection Prevention Cheat Sheet
+- 2026 Research on multi-stage exploits and CVE-2025-53773
 
 If a jailbreak attempt is detected, the system returns a polite error message asking the user to rephrase their question about professional experience.
 

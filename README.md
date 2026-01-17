@@ -4,9 +4,15 @@
 
 An interactive portfolio website powered by Claude AI that transforms how professionals showcase their experience. Move beyond static resumes to interactive, conversational exploration that's impossible to fake and demonstrates real depth.
 
+**🌐 [Live Demo →](https://portfolio.sponge-theory.dev)** - See it in action!
+
+**💡 Inspired by:** [Nate B. Jones](https://natebjones.com) - Pioneer of AI-powered professional portfolios
+
 **📖 Read the full concept:** See `BLOG.md` for the philosophy, psychology, and technical implementation behind this approach.
 
 **💼 Want your own?** Contact us at contact@sponge-theory.ai for professional implementation.
+
+**📦 GitHub Repository:** [github.com/ezeeFlop/christophe-portfolio-ai](https://github.com/ezeeFlop/christophe-portfolio-ai/)
 
 ## 🚀 Features
 

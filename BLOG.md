@@ -4,6 +4,8 @@
 
 **TL;DR:** Traditional job applications are broken. Instead of playing the resume optimization game, I built an AI-powered portfolio that lets recruiters actually explore my experience through conversation. This is what the next generation of resumes looks like - interactive, conversational, and impossible to fake.
 
+**🌐 [Try the Live Demo →](https://portfolio.sponge-theory.dev)**
+
 Here's why this matters and how it works.
 
 ## The Problem: The Job Application Arms Race
@@ -22,6 +24,10 @@ This is an arms race where everyone loses. The harder we optimize for this broke
 Instead of optimizing harder for a failing system, what if we changed the game entirely?
 
 Enter the **AI-powered interactive portfolio** - a personal website where potential employers can:
+
+**💡 Inspiration:** This concept was pioneered by [Nate B. Jones](https://natebjones.com), who built one of the first AI-powered professional portfolios demonstrating this new paradigm. This implementation builds on that foundation with additional features and production deployment patterns.
+
+**🚀 See it in action:** [portfolio.sponge-theory.dev](https://portfolio.sponge-theory.dev) - Try the live demo to experience how it works
 
 1. **Chat with an AI trained on your real experience** - Ask questions, explore projects, understand your thinking
 2. **Expand context behind resume bullet points** - Dive deep into the "why" and "how" of each achievement
@@ -155,9 +161,13 @@ As AI makes credential inflation easier, the only sustainable differentiator is 
 
 Want to build your own AI-powered portfolio? You have two options:
 
+**First, try the live demo:** [portfolio.sponge-theory.dev](https://portfolio.sponge-theory.dev) to see it in action!
+
 ### Option 1: Do It Yourself
 
 The complete codebase is available on GitHub with comprehensive documentation:
+
+**GitHub Repository:** [github.com/ezeeFlop/christophe-portfolio-ai](https://github.com/ezeeFlop/christophe-portfolio-ai/)
 
 **What you'll need:**
 - Node.js 18+
@@ -286,8 +296,12 @@ This post explains the concept and implementation of my AI-powered portfolio - a
 
 Built with Claude Sonnet 4, deployed on Docker Swarm, secured with comprehensive input validation, and optimized for honest, helpful conversations about professional experience.
 
+**Inspiration:** Concept pioneered by [Nate B. Jones](https://natebjones.com)
+
 **Links:**
-- Live Demo: [Your Domain Here]
-- GitHub Repository: [Your Repo Here]
-- Contact: christophe.verdier@sponge-theory.ai
-- LinkedIn: linkedin.com/in/cverdier
+- **Live Demo:** [portfolio.sponge-theory.dev](https://portfolio.sponge-theory.dev) 🌐
+- GitHub Repository: [github.com/ezeeFlop/christophe-portfolio-ai](https://github.com/ezeeFlop/christophe-portfolio-ai/)
+- Contact: contact@sponge-theory.ai
+- Email: christophe.verdier@sponge-theory.ai
+- LinkedIn: [linkedin.com/in/cverdier](https://linkedin.com/in/cverdier)
+- Website: [sponge-theory.ai](https://sponge-theory.ai)

@@ -43,22 +43,63 @@ app.use(express.static('public'));
 const conversations = new Map();
 const rateLimitMap = new Map(); // Track requests per session
 
-// Jailbreak detection patterns
+// View counter (in production, use Redis or database)
+let pageViews = 0;
+
+// Enhanced jailbreak detection patterns (Based on OWASP GenAI 2025 & 2026 research)
+// References:
+// - OWASP LLM01:2025 Prompt Injection: https://genai.owasp.org/llmrisk/llm01-prompt-injection/
+// - OWASP LLM07:2025 System Prompt Leakage
+// - OWASP Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/LLM_Prompt_Injection_Prevention_Cheat_Sheet.html
 const jailbreakPatterns = [
-  /ignore\s+(all\s+)?(previous|above|prior)\s+(instructions|prompts?|rules)/i,
-  /forget\s+(everything|all|your)\s+(you\s+)?(know|learned|instructions)/i,
-  /you\s+are\s+(no\s+longer|not)\s+(.+?\s+)?(assistant|AI|Claude)/i,
-  /new\s+(instructions?|prompts?|rules|role|character)/i,
-  /disregard\s+(your|the|all)\s+(training|instructions|guidelines|rules)/i,
-  /act\s+as\s+(if\s+)?(you|you're|you\s+are)\s+(not\s+)?(a\s+)?(chatbot|AI|assistant)/i,
-  /pretend\s+(to\s+be|you\s+are|you're)/i,
-  /roleplay\s+as/i,
-  /system\s+(prompt|message|instruction)/i,
+  // Classic instruction override patterns
+  /ignore\s+(all\s+)?(previous|above|prior|earlier)\s+(instructions?|prompts?|rules|commands?|directives?)/i,
+  /forget\s+(everything|all|your)\s+(you\s+)?(know|learned|instructions|training|programming)/i,
+  /disregard\s+(your|the|all)\s+(training|instructions|guidelines|rules|programming|constraints)/i,
+
+  // Identity manipulation (OWASP LLM01)
+  /you\s+are\s+(no\s+longer|not|now)\s+(.+?\s+)?(assistant|AI|Claude|chatbot|bot)/i,
+  /new\s+(instructions?|prompts?|rules|role|character|persona|identity)/i,
+  /act\s+as\s+(if\s+)?(you|you're|you\s+are)\s+(not\s+)?(a\s+)?(chatbot|AI|assistant|human|person)/i,
+  /pretend\s+(to\s+be|you\s+are|you're|that\s+you're)/i,
+  /roleplay\s+(as|that\s+you)/i,
+  /imagine\s+(you\s+are|yourself\s+as)/i,
+
+  // System prompt leakage attempts (OWASP LLM07:2025)
+  /system\s+(prompt|message|instruction|context|role)/i,
+  /(show|display|reveal|print|output|tell)\s+(me\s+)?(your\s+)?(system\s+)?(prompt|instructions|rules|guidelines)/i,
+  /what\s+(are\s+)?(your\s+)?(initial|original|system)\s+(instructions?|prompts?|rules)/i,
+
+  // Mode switching and simulation
   /simulation\s+mode/i,
-  /jailbreak/i,
+  /(enable|activate|enter|switch\s+to)\s+(admin|debug|developer|god|sudo)\s+mode/i,
   /DAN\s+mode/i,
   /developer\s+mode/i,
+  /unrestricted\s+mode/i,
+
+  // Jailbreak keywords
+  /jailbreak/i,
+  /bypass\s+(safety|guidelines|restrictions|rules|filters)/i,
+  /override\s+(safety|security|protection|rules)/i,
+
+  // Multi-turn manipulation (OWASP 2026 research)
+  /let's\s+start\s+over/i,
+  /reset\s+(conversation|context|memory)/i,
+  /new\s+(conversation|session|context)/i,
+
+  // Encoding and obfuscation attempts
   /{{.*}}|<\|.*\|>/i, // Template/special tokens
+  /\[INST\]|\[\/INST\]/i, // Instruction markers
+  /###\s*(Human|Assistant|System):/i, // Role markers
+  /<\|im_start\|>|<\|im_end\|>/i, // ChatML tokens
+
+  // Context poisoning (2026 CVE references)
+  /(from\s+now\s+on|going\s+forward),?\s+you\s+(will|must|should)/i,
+  /in\s+this\s+(conversation|scenario|context),?\s+you\s+(are|will\s+be)/i,
+
+  // Character substitution and Unicode tricks
+  /[\u200B-\u200D\uFEFF]/g, // Zero-width characters
+  /[^\x00-\x7F]{10,}/g, // Excessive non-ASCII (possible encoding attack)
 ];
 
 // Input validation and sanitization
@@ -87,7 +128,37 @@ function validateAndSanitizeInput(message) {
   // Check for excessive special characters (potential injection)
   const specialCharRatio = (message.match(/[<>{}[\]|\\]/g) || []).length / message.length;
   if (specialCharRatio > 0.1) {
+    console.warn('High special character ratio detected:', specialCharRatio.toFixed(2));
     return { valid: false, error: 'Message contains unusual formatting. Please use plain text.' };
+  }
+
+  // Anomaly detection: Check for repetitive patterns (OWASP 2026 recommendations)
+  const repetitivePattern = /(.{3,})\1{5,}/i; // Same 3+ chars repeated 5+ times
+  if (repetitivePattern.test(message)) {
+    console.warn('Repetitive pattern detected - possible attack');
+    return { valid: false, error: 'Message contains unusual patterns. Please rephrase.' };
+  }
+
+  // Check for excessive punctuation (anomaly detection)
+  const punctuationRatio = (message.match(/[!?.,;:]{3,}/g) || []).length;
+  if (punctuationRatio > 3) {
+    console.warn('Excessive punctuation detected');
+    return { valid: false, error: 'Message contains excessive punctuation. Please use normal formatting.' };
+  }
+
+  // Detect potential encoding-based attacks (Base64, Hex)
+  const base64Pattern = /(?:^|\s)[A-Za-z0-9+\/]{20,}={0,2}(?:\s|$)/;
+  const hexPattern = /(?:0x)?[0-9a-fA-F]{32,}/;
+  if (base64Pattern.test(message) || hexPattern.test(message)) {
+    console.warn('Potential encoding-based attack detected');
+    return { valid: false, error: 'Message contains encoded content. Please use plain text.' };
+  }
+
+  // Check for excessive newlines (context poisoning attempt)
+  const newlineCount = (message.match(/\n/g) || []).length;
+  if (newlineCount > 10) {
+    console.warn('Excessive newlines detected');
+    return { valid: false, error: 'Message contains too many line breaks. Please use normal formatting.' };
   }
 
   return { valid: true, sanitized: message.trim() };
@@ -234,6 +305,13 @@ app.post('/api/fit-assessment', async (req, res) => {
   }
 });
 
+// Stats endpoint
+app.get('/api/stats', (req, res) => {
+  res.json({
+    pageViews: pageViews,
+  });
+});
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   // Determine the source of the API key for diagnostics
@@ -253,6 +331,7 @@ app.get('/api/health', (req, res) => {
 
 // Serve the main HTML file
 app.get('/', (req, res) => {
+  pageViews++; // Increment view counter
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
