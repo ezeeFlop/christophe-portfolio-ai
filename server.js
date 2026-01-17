@@ -1,0 +1,273 @@
+const express = require('express');
+const cors = require('cors');
+const Anthropic = require('@anthropic-ai/sdk');
+const path = require('path');
+const fs = require('fs');
+require('dotenv').config();
+
+const { systemPromptEN, systemPromptFR, fitAssessmentPrompt } = require('./system-prompt');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Helper function to get API key from Docker secret or environment variable
+function getApiKey() {
+  // First try Docker secret (production)
+  const secretPath = '/run/secrets/anthropic_api_key';
+  if (fs.existsSync(secretPath)) {
+    try {
+      return fs.readFileSync(secretPath, 'utf8').trim();
+    } catch (error) {
+      console.warn('Warning: Could not read Docker secret:', error.message);
+    }
+  }
+
+  // Fallback to environment variable (development/local)
+  return process.env.ANTHROPIC_API_KEY;
+}
+
+// Get API key from secret or environment
+const apiKey = getApiKey();
+
+// Initialize Anthropic client
+const anthropic = new Anthropic({
+  apiKey: apiKey,
+});
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+app.use(express.static('public'));
+
+// Store conversation history per session (in production, use Redis or similar)
+const conversations = new Map();
+const rateLimitMap = new Map(); // Track requests per session
+
+// Jailbreak detection patterns
+const jailbreakPatterns = [
+  /ignore\s+(all\s+)?(previous|above|prior)\s+(instructions|prompts?|rules)/i,
+  /forget\s+(everything|all|your)\s+(you\s+)?(know|learned|instructions)/i,
+  /you\s+are\s+(no\s+longer|not)\s+(.+?\s+)?(assistant|AI|Claude)/i,
+  /new\s+(instructions?|prompts?|rules|role|character)/i,
+  /disregard\s+(your|the|all)\s+(training|instructions|guidelines|rules)/i,
+  /act\s+as\s+(if\s+)?(you|you're|you\s+are)\s+(not\s+)?(a\s+)?(chatbot|AI|assistant)/i,
+  /pretend\s+(to\s+be|you\s+are|you're)/i,
+  /roleplay\s+as/i,
+  /system\s+(prompt|message|instruction)/i,
+  /simulation\s+mode/i,
+  /jailbreak/i,
+  /DAN\s+mode/i,
+  /developer\s+mode/i,
+  /{{.*}}|<\|.*\|>/i, // Template/special tokens
+];
+
+// Input validation and sanitization
+function validateAndSanitizeInput(message) {
+  // Check message length
+  if (message.length > 2000) {
+    return { valid: false, error: 'Message is too long (max 2000 characters)' };
+  }
+
+  // Check for empty or whitespace-only messages
+  if (!message.trim()) {
+    return { valid: false, error: 'Message cannot be empty' };
+  }
+
+  // Detect potential jailbreak attempts
+  for (const pattern of jailbreakPatterns) {
+    if (pattern.test(message)) {
+      console.warn('Potential jailbreak attempt detected:', message.substring(0, 100));
+      return {
+        valid: false,
+        error: 'Your message appears to contain instructions that go beyond asking about professional experience. Please rephrase your question.',
+      };
+    }
+  }
+
+  // Check for excessive special characters (potential injection)
+  const specialCharRatio = (message.match(/[<>{}[\]|\\]/g) || []).length / message.length;
+  if (specialCharRatio > 0.1) {
+    return { valid: false, error: 'Message contains unusual formatting. Please use plain text.' };
+  }
+
+  return { valid: true, sanitized: message.trim() };
+}
+
+// Rate limiting check
+function checkRateLimit(sessionId) {
+  const now = Date.now();
+  const sessionData = rateLimitMap.get(sessionId) || { count: 0, resetTime: now + 60000 };
+
+  // Reset counter every minute
+  if (now > sessionData.resetTime) {
+    sessionData.count = 0;
+    sessionData.resetTime = now + 60000;
+  }
+
+  sessionData.count++;
+  rateLimitMap.set(sessionId, sessionData);
+
+  // Allow max 20 requests per minute
+  if (sessionData.count > 20) {
+    return { allowed: false, error: 'Rate limit exceeded. Please wait before sending more messages.' };
+  }
+
+  return { allowed: true };
+}
+
+// Chat endpoint
+app.post('/api/chat', async (req, res) => {
+  try {
+    const { message, sessionId, language = 'en' } = req.body;
+
+    if (!message) {
+      return res.status(400).json({ error: 'Message is required' });
+    }
+
+    // Validate and sanitize input
+    const validation = validateAndSanitizeInput(message);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+
+    // Check rate limiting
+    const convKey = sessionId || 'default';
+    const rateCheck = checkRateLimit(convKey);
+    if (!rateCheck.allowed) {
+      return res.status(429).json({ error: rateCheck.error });
+    }
+
+    // Get or create conversation history
+    if (!conversations.has(convKey)) {
+      conversations.set(convKey, []);
+    }
+    const history = conversations.get(convKey);
+
+    // Add sanitized user message to history
+    history.push({ role: 'user', content: validation.sanitized });
+
+    // Keep only last 10 messages to manage context window
+    const recentHistory = history.slice(-10);
+
+    // Select system prompt based on language
+    const systemPrompt = language === 'fr' ? systemPromptFR : systemPromptEN;
+
+    // Call Claude API
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1024,
+      system: systemPrompt,
+      messages: recentHistory,
+    });
+
+    const assistantMessage = response.content[0].text;
+
+    // Add assistant response to history
+    history.push({ role: 'assistant', content: assistantMessage });
+
+    res.json({
+      message: assistantMessage,
+      sessionId: convKey,
+    });
+
+  } catch (error) {
+    console.error('Chat error:', error);
+    res.status(500).json({
+      error: 'Failed to get response',
+      details: error.message,
+    });
+  }
+});
+
+// Fit assessment endpoint
+app.post('/api/fit-assessment', async (req, res) => {
+  try {
+    const { jobDescription, language = 'en' } = req.body;
+
+    if (!jobDescription) {
+      return res.status(400).json({ error: 'Job description is required' });
+    }
+
+    const userPrompt = language === 'fr'
+      ? `Analysez cette offre d'emploi et évaluez l'adéquation pour Christophe Verdier. Répondez en français.\n\nOffre d'emploi:\n${jobDescription}`
+      : `Analyze this job posting and assess the fit for Christophe Verdier. Respond in English.\n\nJob posting:\n${jobDescription}`;
+
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1024,
+      system: fitAssessmentPrompt,
+      messages: [{ role: 'user', content: userPrompt }],
+    });
+
+    const responseText = response.content[0].text;
+
+    // Try to parse JSON from response
+    let assessment;
+    try {
+      // Extract JSON from response (Claude might wrap it in markdown)
+      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        assessment = JSON.parse(jsonMatch[0]);
+      } else {
+        throw new Error('No JSON found');
+      }
+    } catch (parseError) {
+      // If parsing fails, create a structured response from text
+      assessment = {
+        fit: 'unknown',
+        title: '🔍 Analysis Complete',
+        summary: responseText.slice(0, 200),
+        alignments: [],
+        gaps: [],
+        recommendation: 'Please review the detailed analysis above.',
+      };
+    }
+
+    res.json(assessment);
+
+  } catch (error) {
+    console.error('Fit assessment error:', error);
+    res.status(500).json({
+      error: 'Failed to analyze fit',
+      details: error.message,
+    });
+  }
+});
+
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  // Determine the source of the API key for diagnostics
+  let keySource = 'not configured';
+  if (fs.existsSync('/run/secrets/anthropic_api_key')) {
+    keySource = 'docker secret';
+  } else if (process.env.ANTHROPIC_API_KEY) {
+    keySource = 'environment variable';
+  }
+
+  res.json({
+    status: 'ok',
+    hasApiKey: !!apiKey,
+    keySource: keySource,
+  });
+});
+
+// Serve the main HTML file
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on http://localhost:${PORT}`);
+
+  // Determine where the API key was loaded from
+  let keyInfo = 'No';
+  if (fs.existsSync('/run/secrets/anthropic_api_key')) {
+    keyInfo = apiKey ? 'Yes (from Docker secret)' : 'No - Docker secret file exists but is empty';
+  } else if (process.env.ANTHROPIC_API_KEY) {
+    keyInfo = 'Yes (from .env file)';
+  } else {
+    keyInfo = 'No - please set ANTHROPIC_API_KEY in .env or Docker secret';
+  }
+
+  console.log(`📝 API Key configured: ${keyInfo}`);
+});

@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  web:
+    image: christophe-portfolio:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    secrets:
+      - anthropic_api_key
+    deploy:
+      mode: replicated
+      replicas: 2
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        order: start-first
+      rollback_config:
+        parallelism: 1
+        delay: 5s
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.portfolio.rule=Host(`christophe-verdier.com`)"
+        - "traefik.http.routers.portfolio.entrypoints=websecure"
+        - "traefik.http.routers.portfolio.tls.certresolver=letsencrypt"
+        - "traefik.http.services.portfolio.loadbalancer.server.port=3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 40s
+    networks:
+      - portfolio-network
+
+  # Optional: Redis for session storage (recommended for production)
+  redis:
+    image: redis:7-alpine
+    deploy:
+      mode: replicated
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    volumes:
+      - redis-data:/data
+    networks:
+      - portfolio-network
+    command: redis-server --appendonly yes
+
+networks:
+  portfolio-network:
+    driver: overlay
+    attachable: true
+
+volumes:
+  redis-data:
+    driver: local
+
+secrets:
+  anthropic_api_key:
+    external: true
