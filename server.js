@@ -37,6 +37,14 @@ const anthropic = new Anthropic({
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Homepage route with page view counter (must be before express.static)
+app.get('/', (req, res) => {
+  pageViews++; // Increment view counter
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Serve static files (after homepage route to avoid bypassing counter)
 app.use(express.static('public'));
 
 // Store conversation history per session (in production, use Redis or similar)
@@ -44,7 +52,7 @@ const conversations = new Map();
 const rateLimitMap = new Map(); // Track requests per session
 
 // View counter (in production, use Redis or database)
-let pageViews = 0;
+let pageViews = 1782;
 
 // Enhanced jailbreak detection patterns (Based on OWASP GenAI 2025 & 2026 research)
 // References:
@@ -327,12 +335,6 @@ app.get('/api/health', (req, res) => {
     hasApiKey: !!apiKey,
     keySource: keySource,
   });
-});
-
-// Serve the main HTML file
-app.get('/', (req, res) => {
-  pageViews++; // Increment view counter
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.listen(PORT, () => {
