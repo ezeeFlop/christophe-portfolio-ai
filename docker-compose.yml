@@ -11,11 +11,16 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3000
+      - DATA_DIR=/app/data
     secrets:
       - anthropic_api_key
+    volumes:
+      # Persists the page-view counter across redeploys. NOTE: a local volume is
+      # node-scoped, so the web service is pinned to a single replica below.
+      - portfolio-data:/app/data
     deploy:
       mode: replicated
-      replicas: 2
+      replicas: 1
       restart_policy:
         condition: on-failure
         delay: 5s
@@ -79,6 +84,8 @@ networks:
 
 volumes:
   redis-data:
+    driver: local
+  portfolio-data:
     driver: local
 
 secrets:

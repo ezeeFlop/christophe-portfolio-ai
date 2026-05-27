@@ -41,6 +41,7 @@ app.use(express.json());
 // Homepage route with page view counter (must be before express.static)
 app.get('/', (req, res) => {
   pageViews++; // Increment view counter
+  savePageViews(); // Persist to disk (debounced)
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
@@ -51,8 +52,51 @@ app.use(express.static('public'));
 const conversations = new Map();
 const rateLimitMap = new Map(); // Track requests per session
 
-// View counter (in production, use Redis or database)
-let pageViews = 1782;
+// View counter with file-based persistence.
+// IMPORTANT: a local file is per-container, so the web service MUST run a single
+// replica (see docker-compose.yml) and the data dir MUST be a mounted volume,
+// otherwise replicas keep divergent counts and redeploys reset to the seed.
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+const VIEWS_FILE = path.join(DATA_DIR, 'pageviews.json');
+const VIEWS_SEED = 1782; // baseline used only on the very first run, before any file exists
+
+function loadPageViews() {
+  try {
+    if (fs.existsSync(VIEWS_FILE)) {
+      const data = JSON.parse(fs.readFileSync(VIEWS_FILE, 'utf8'));
+      if (Number.isFinite(data.pageViews)) return data.pageViews;
+    }
+  } catch (err) {
+    console.error('Failed to load page views, starting from seed:', err.message);
+  }
+  return VIEWS_SEED;
+}
+
+let pageViews = loadPageViews();
+
+function writePageViews() {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(VIEWS_FILE, JSON.stringify({ pageViews }));
+  } catch (err) {
+    console.error('Failed to persist page views:', err.message);
+  }
+}
+
+// Debounce writes so a burst of traffic doesn't thrash the disk
+let saveScheduled = false;
+function savePageViews() {
+  if (saveScheduled) return;
+  saveScheduled = true;
+  setTimeout(() => {
+    saveScheduled = false;
+    writePageViews();
+  }, 2000);
+}
+
+// Flush the latest count synchronously on shutdown (Swarm sends SIGTERM on redeploy)
+process.on('SIGTERM', () => { writePageViews(); process.exit(0); });
+process.on('SIGINT', () => { writePageViews(); process.exit(0); });
 
 // Enhanced jailbreak detection patterns (Based on OWASP GenAI 2025 & 2026 research)
 // References:

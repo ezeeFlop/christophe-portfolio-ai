@@ -11,84 +11,30 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3000
+      - DATA_DIR=/app/data
     secrets:
       - anthropic_api_key
-    deploy:
-      mode: replicated
-      replicas: 2
-      restart_policy:
-        condition: on-failure
-        delay: 5s
-        max_attempts: 3
-        window: 120s
-      update_config:
-        parallelism: 1
-        delay: 10s
-        failure_action: rollback
-        order: start-first
-      rollback_config:
-        parallelism: 1
-        delay: 5s
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 512M
-        reservations:
-          cpus: '0.5'
-          memory: 256M
-      labels:
-        # Traefik labels for automatic routing and SSL
-        - "traefik.enable=true"
-        - "traefik.http.routers.portfolio.rule=Host(`christophe-verdier.com`) || Host(`www.christophe-verdier.com`)"
-        - "traefik.http.routers.portfolio.entrypoints=websecure"
-        - "traefik.http.routers.portfolio.tls.certresolver=letsencrypt"
-        - "traefik.http.services.portfolio.loadbalancer.server.port=3000"
-        # Redirect www to non-www
-        - "traefik.http.middlewares.portfolio-redirect.redirectregex.regex=^https://www\\.christophe-verdier\\.com/(.*)"
-        - "traefik.http.middlewares.portfolio-redirect.redirectregex.replacement=https://christophe-verdier.com/$${1}"
-        - "traefik.http.routers.portfolio.middlewares=portfolio-redirect"
-    healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
-      interval: 30s
-      timeout: 3s
-      retries: 3
-      start_period: 40s
+    volumes:
+      # Persists the page-view counter across redeploys. The task is pinned to
+      # node.labels.NODE == 2 below, so this node-scoped local volume always
+      # follows it — the counter survives restarts and redeploys.
+      - portfolio-data:/app/data
     networks:
-      - portfolio-network
-      - traefik-public
-
-  # Optional: Redis for session storage (recommended for production)
-  # Uncomment if using Redis
-  # redis:
-  #   image: redis:7-alpine
-  #   deploy:
-  #     mode: replicated
-  #     replicas: 1
-  #     restart_policy:
-  #       condition: on-failure
-  #     resources:
-  #       limits:
-  #         cpus: '0.5'
-  #         memory: 256M
-  #       reservations:
-  #         cpus: '0.25'
-  #         memory: 128M
-  #   volumes:
-  #     - redis-data:/data
-  #   networks:
-  #     - portfolio-network
-  #   command: redis-server --appendonly yes
+      - webfacing
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.NODE == 2
 
 networks:
-  portfolio-network:
+  webfacing:
     driver: overlay
-    attachable: true
-  traefik-public:
     external: true
 
-# volumes:
-#   redis-data:
-#     driver: local
+volumes:
+  portfolio-data:
+    driver: local
 
 secrets:
   anthropic_api_key:

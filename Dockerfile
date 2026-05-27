@@ -33,7 +33,9 @@ COPY public ./public
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nodejs -u 1001
 
-# Change ownership of the app directory
+# Create the writable data dir for the page-view counter (a fresh named volume
+# mounted here will inherit this ownership), then fix ownership of everything
+RUN mkdir -p /app/data
 RUN chown -R nodejs:nodejs /app
 
 # Switch to non-root user
